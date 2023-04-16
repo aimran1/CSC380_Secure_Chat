@@ -89,6 +89,7 @@ int initServerNet(int port)
 	/* at this point, should be able to send/recv on sockfd */
 	
 	// Generate key
+	
 	if (init("params") == 0) {
 		// gmp_printf("Successfully read DH params:\nq = %Zd\np = %Zd\ng = %Zd\n",q,p,g);
 	}
@@ -97,35 +98,47 @@ int initServerNet(int port)
 	NEWZ(A); /* public key: A = g^a mod p */
 	dhGen(a,A);
 	gmp_printf("A: %Zd\n", A);
+	
+	NEWZ(x); /* secret key (a random exponent) */
+	NEWZ(X); /* public key: A = g^a mod p */
+	dhGen(x,X);
+	gmp_printf("X: %Zd\n", X);
 
-	mpz_t B;
-	mpz_init(B);
-	// receive public key from client
-	size_t lenB;
-	recv(sockfd, (void*)&lenB, sizeof(size_t), 0);
-	char* strB = (char*) malloc(sizeof(char) * (lenB + 1));
-	recv(sockfd, strB, lenB, 0);
-	mpz_set_str(B, strB, 10);
-	free(strB);
-	gmp_printf("B: %Zd\n", B);
+	mpz_t Y;
+	mpz_init(Y);
+	// receive public key from clientS
+	size_t lenY;
+	recv(sockfd, (void*)&lenY, sizeof(size_t), 0);
+	char* strY = (char*) malloc(sizeof(char) * (lenY + 1));
+	recv(sockfd, strY, lenY, 0);
+	mpz_set_str(Y, strY, 10);
+	free(strY);
+	gmp_printf("Y: %Zd\n", Y);
 	// recv(sockfd, &B, sizeof(mpz_t), 0);
 	// send public key to client
-	char* strA = (char*) malloc(sizeof(char) * (mpz_sizeinbase(B, 10) + 1));
-	mpz_get_str(strA, 10, A);
-	size_t lenA = strlen(strA);
-	send(sockfd, (void*)&lenA, sizeof(size_t), 0);
-	send(sockfd, strA, lenA, 0);
-	free(strA);
+	char* strX = (char*) malloc(sizeof(char) * (mpz_sizeinbase(X, 10) + 1));
+	mpz_get_str(strX, 10, X);
+	size_t lenX = strlen(strX);
+	send(sockfd, (void*)&lenX, sizeof(size_t), 0);
+	send(sockfd, strX, lenX, 0);
+	free(strX);
 	// send(sockfd, &A, sizeof(mpz_t), 0);
 
 	// const size_t klen = 32;
 	const size_t klen = 128;
 	/* Alice's key derivation: */
 	unsigned char kA[klen];
-	dhFinal(a,A,B,kA,klen);
+	dhFinal(a,A,Y,kA,klen);
 	printf("Alice's key:\n");
 	for (size_t i = 0; i < klen; i++) {
 		printf("%02x ",kA[i]);
+	}
+	
+	unsigned char kC[klen];
+	dhFinal(x,X,Y,kC,klen);
+	printf("\nThis is what Alice Sees:\n");
+	for (size_t i = 0; i < klen; i++) {
+		printf("%02x ",kC[i]);
 	}
 	// End of generating key
 
@@ -161,38 +174,52 @@ static int initClientNet(char* hostname, int port)
 	NEWZ(b); /* secret key (a random exponent) */
 	NEWZ(B); /* public key: B = g^b mod p */
 	dhGen(b,B);
+	
+	NEWZ(y); /* secret key (a random exponent) */
+	NEWZ(Y); /* public key: A = g^a mod p */
+	dhGen(y,Y);
+	gmp_printf("Y: %Zd\n", Y);
 
 	gmp_printf("B: %Zd\n", B);
 	// send public key to server
-	char* strB = (char*) malloc(sizeof(char) * (mpz_sizeinbase(B, 10) + 1));
-	mpz_get_str(strB, 10, B);
-	size_t lenB = strlen(strB);
-	send(sockfd, (void*)&lenB, sizeof(size_t), 0);
-	send(sockfd, strB, lenB, 0);
-	free(strB);
+	char* strY = (char*) malloc(sizeof(char) * (mpz_sizeinbase(Y, 10) + 1));
+	mpz_get_str(strY, 10, Y);
+	size_t lenY = strlen(strY);
+	send(sockfd, (void*)&lenY, sizeof(size_t), 0);
+	send(sockfd, strY, lenY, 0);
+	free(strY);
 	// send(sockfd, &B, sizeof(mpz_t), 0);
 	
-	mpz_t A;
-	mpz_init(A);
+	mpz_t X;
+	mpz_init(X);
 	// receive public key from server
-	size_t lenA;
-	recv(sockfd, (void*)&lenA, sizeof(size_t), 0);
-	char* strA = (char*) malloc(sizeof(char) * (lenA + 1));
-	recv(sockfd, strA, lenA, 0);
-	mpz_set_str(A, strA, 10);
-	free(strA);
-	gmp_printf("A: %Zd\n", A);
+	size_t lenX;
+	recv(sockfd, (void*)&lenX, sizeof(size_t), 0);
+	char* strX = (char*) malloc(sizeof(char) * (lenX + 1));
+	recv(sockfd, strX, lenX, 0);
+	mpz_set_str(X, strX, 10);
+	free(strX);
+	gmp_printf("X: %Zd\n", X);
 	// recv(sockfd, &A, sizeof(mpz_t), 0);
 
 	// const size_t klen = 32;
 	const size_t klen = 128;
 	/* Bob's key derivation: */
 	unsigned char kB[klen];
-	dhFinal(b,B,A,kB,klen);
+	dhFinal(b,B,X,kB,klen);
 	printf("Bob's key:\n");
+	
 	for (size_t i = 0; i < klen; i++) {
 		printf("%02x ",kB[i]);
 	}
+	
+	unsigned char kC[klen];
+	dhFinal(y,Y,X,kC,klen);
+	printf("\nThis is what Bob Sees:\n");
+	for (size_t i = 0; i < klen; i++) {
+		printf("%02x ",kC[i]);
+	}
+	
 	// End of generating key
 
 	return 0;
