@@ -11,6 +11,7 @@
 #include <openssl/sha.h>
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
+#include <openssl/err.h>
 #include <string.h>
 #include <getopt.h>
 #include <string>
@@ -53,6 +54,11 @@ static deque<string> transcript;
 /* network stuff... */
 
 int listensock, sockfd;
+
+/* Session Keys */
+unsigned char* client_key;
+unsigned char* server_key;
+int message_length;
 
 [[noreturn]] static void fail_exit(const char *msg);
 
@@ -140,7 +146,16 @@ int initServerNet(int port)
 	for (size_t i = 0; i < klen; i++) {
 		printf("%02x ",kC[i]);
 	}
+	printf("\n");
+	server_key = kC;
 	// End of generating key
+	
+	printf("\nSaved Server Key:\n");
+	for (size_t i = 0; i < klen; i++) {
+		printf("%02x ",server_key[i]);
+	}
+	printf("\n");
+	
 
 	return 0;
 }
@@ -219,6 +234,13 @@ static int initClientNet(char* hostname, int port)
 	for (size_t i = 0; i < klen; i++) {
 		printf("%02x ",kC[i]);
 	}
+
+	client_key = kC;
+	printf("\nSaved Client Key:\n");
+	for (size_t i = 0; i < klen; i++) {
+		printf("%02x ",client_key[i]);
+	}
+	printf("\n");
 	
 	// End of generating key
 
@@ -302,10 +324,58 @@ static void msg_typed(char *line)
 		if (*line) {
 			add_history(line);
 			mymsg = string(line);
+			size_t len = mymsg.length();
+			unsigned char iv[16];
+			for (size_t i = 0; i < 16; i++) iv[i] = i;
+			unsigned char ct[512];
+			unsigned char pt[512];
+			/* so you can see which bytes were written: */
+			memset(ct,0,512);
+			memset(pt,0,512);
+			
+			unsigned char* session_key = (client_key == NULL) ? server_key : client_key;
+
+			/* encrypt: */
+			EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+			if (1!=EVP_EncryptInit_ex(ctx,EVP_aes_256_ctr(),0,session_key,iv))
+				ERR_print_errors_fp(stderr);
+			int nWritten; /* stores number of written bytes (size of ciphertext) */
+			if (1!=EVP_EncryptUpdate(ctx,ct,&nWritten,(unsigned char*)mymsg.c_str(),len))
+				ERR_print_errors_fp(stderr);
+			EVP_CIPHER_CTX_free(ctx);
+			size_t ctlen = nWritten;
+			message_length = nWritten;
+			printf("ciphertext of length %i:\n",nWritten);
+			for (size_t i = 0; i < ctlen; i++) {
+				printf("%02x",ct[i]);
+			}
+			printf("\n");
+				
+			char* hmackey = "asdfasdfasdfasdfasdfasdf";
+			unsigned char mac[64]; /* if using sha512 */
+			memset(mac,0,64);
+			HMAC(EVP_sha512(),hmackey,strlen(hmackey),(unsigned char*)mymsg.c_str(),mymsg.length(),mac,0);
+			//printf("hmac-512(\"%s\"):\n",mymsg);
+			//for (size_t i = 0; i < 64; i++) {
+			//	printf("%02x",mac[i]);
+			//}
+			//printf("\n");
+			
+			unsigned char result[576];
+			memcpy(result,ct,512);
+			memcpy(result+512,mac,64);
+			
+			//printf("Result(\"%s\"):\n",mymsg);
+			//for (size_t i = 0; i < 576; i++) {
+			//	printf("%02x",result[i]);
+			//}
+			//printf("\n");
+			
 			transcript.push_back("me: " + mymsg);
 			ssize_t nbytes;
-			if ((nbytes = send(sockfd,line,mymsg.length(),0)) == -1)
+			if ((nbytes = send(sockfd,result,576,0)) == -1)
 				error("send failed");
+
 		}
 		pthread_mutex_lock(&qmx);
 		mq.push_back({false,mymsg,"me",msg_win});
@@ -585,7 +655,7 @@ void* cursesthread(void* pData)
 
 void* recvMsg(void*)
 {
-	size_t maxlen = 256;
+	size_t maxlen = 576;
 	char msg[maxlen+1];
 	ssize_t nbytes;
 	while (1) {
@@ -597,8 +667,36 @@ void* recvMsg(void*)
 			should_exit = true;
 			return 0;
 		}
+		
+		unsigned char mymsg[512];
+		memcpy(mymsg,msg,512);
+		unsigned char mymac[64];
+		memcpy(mymac,msg+512,64);
+		unsigned char pt[512];
+		unsigned char iv[16];
+		for (size_t i = 0; i < 16; i++) iv[i] = i;
+		int nWritten = message_length;
+		
+		unsigned char* session_key = (client_key == NULL) ? server_key : client_key;
+		
+		/* now decrypt.  NOTE: in counter mode, encryption and decryption are
+		 * actually identical, so doing the above again would work.  Also
+		 * note that it is crucial to make sure IVs are not reused, though it
+		 * Won't be an issue for our hybrid scheme as AES keys are only used
+		 * once.  */
+		/* wipe out plaintext to be sure it worked: */
+		memset(pt,0,512);
+		EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+		if (1!=EVP_DecryptInit_ex(ctx,EVP_aes_256_ctr(),0,session_key,iv))
+			ERR_print_errors_fp(stderr);
+		if (1!=EVP_DecryptUpdate(ctx,pt,&nWritten,mymsg,512))
+			ERR_print_errors_fp(stderr);
+		printf("decrypted %i bytes:\n%s\n",nWritten,pt);
+		/* NOTE: counter mode will preserve the length (although the person
+		 * decrypting needs to know the IV) */
+		
 		pthread_mutex_lock(&qmx);
-		mq.push_back({false,msg,"Mr Thread",msg_win});
+		mq.push_back({false,(char*)pt,"Mr Thread",msg_win});
 		pthread_cond_signal(&qcv);
 		pthread_mutex_unlock(&qmx);
 	}
