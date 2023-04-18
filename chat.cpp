@@ -103,12 +103,12 @@ int initServerNet(int port)
 	NEWZ(a); /* secret key (a random exponent) */
 	NEWZ(A); /* public key: A = g^a mod p */
 	dhGen(a,A);
-	gmp_printf("A: %Zd\n", A);
+	// gmp_printf("A: %Zd\n", A);
 	
 	NEWZ(x); /* secret key (a random exponent) */
 	NEWZ(X); /* public key: A = g^a mod p */
 	dhGen(x,X);
-	gmp_printf("X: %Zd\n", X);
+	// gmp_printf("X: %Zd\n", X);
 
 	mpz_t Y;
 	mpz_init(Y);
@@ -119,7 +119,7 @@ int initServerNet(int port)
 	recv(sockfd, strY, lenY, 0);
 	mpz_set_str(Y, strY, 10);
 	free(strY);
-	gmp_printf("Y: %Zd\n", Y);
+	// gmp_printf("Y: %Zd\n", Y);
 	// recv(sockfd, &B, sizeof(mpz_t), 0);
 	// send public key to client
 	char* strX = (char*) malloc(sizeof(char) * (mpz_sizeinbase(X, 10) + 1));
@@ -135,26 +135,26 @@ int initServerNet(int port)
 	/* Alice's key derivation: */
 	unsigned char kA[klen];
 	dhFinal(a,A,Y,kA,klen);
-	printf("Alice's key:\n");
-	for (size_t i = 0; i < klen; i++) {
-		printf("%02x ",kA[i]);
-	}
+	// printf("Alice's key:\n");
+	// for (size_t i = 0; i < klen; i++) {
+	// 	printf("%02x ",kA[i]);
+	// }
 	
 	unsigned char kC[klen];
 	dhFinal(x,X,Y,kC,klen);
-	printf("\nThis is what Alice Sees:\n");
-	for (size_t i = 0; i < klen; i++) {
-		printf("%02x ",kC[i]);
-	}
-	printf("\n");
+	// printf("\nThis is what Alice Sees:\n");
+	// for (size_t i = 0; i < klen; i++) {
+	// 	printf("%02x ",kC[i]);
+	// }
+	// printf("\n");
 	server_key = kC;
 	// End of generating key
 	
-	printf("\nSaved Server Key:\n");
-	for (size_t i = 0; i < klen; i++) {
-		printf("%02x ",server_key[i]);
-	}
-	printf("\n");
+	// printf("\nSaved Server Key:\n");
+	// for (size_t i = 0; i < klen; i++) {
+	// 	printf("%02x ",server_key[i]);
+	// }
+	// printf("\n");
 
 	FILE *fptr;
 	fptr = fopen("server_key.bin", "w");
@@ -197,9 +197,9 @@ static int initClientNet(char* hostname, int port)
 	NEWZ(y); /* secret key (a random exponent) */
 	NEWZ(Y); /* public key: A = g^a mod p */
 	dhGen(y,Y);
-	gmp_printf("Y: %Zd\n", Y);
+	// gmp_printf("Y: %Zd\n", Y);
 
-	gmp_printf("B: %Zd\n", B);
+	// gmp_printf("B: %Zd\n", B);
 	// send public key to server
 	char* strY = (char*) malloc(sizeof(char) * (mpz_sizeinbase(Y, 10) + 1));
 	mpz_get_str(strY, 10, Y);
@@ -218,7 +218,7 @@ static int initClientNet(char* hostname, int port)
 	recv(sockfd, strX, lenX, 0);
 	mpz_set_str(X, strX, 10);
 	free(strX);
-	gmp_printf("X: %Zd\n", X);
+	// gmp_printf("X: %Zd\n", X);
 	// recv(sockfd, &A, sizeof(mpz_t), 0);
 
 	// const size_t klen = 32;
@@ -226,25 +226,25 @@ static int initClientNet(char* hostname, int port)
 	/* Bob's key derivation: */
 	unsigned char kB[klen];
 	dhFinal(b,B,X,kB,klen);
-	printf("Bob's key:\n");
+	// printf("Bob's key:\n");
 	
-	for (size_t i = 0; i < klen; i++) {
-		printf("%02x ",kB[i]);
-	}
+	// for (size_t i = 0; i < klen; i++) {
+	// 	printf("%02x ",kB[i]);
+	// }
 	
 	unsigned char kC[klen];
 	dhFinal(y,Y,X,kC,klen);
-	printf("\nThis is what Bob Sees:\n");
-	for (size_t i = 0; i < klen; i++) {
-		printf("%02x ",kC[i]);
-	}
+	// printf("\nThis is what Bob Sees:\n");
+	// for (size_t i = 0; i < klen; i++) {
+	// 	printf("%02x ",kC[i]);
+	// }
 
 	client_key = kC;
-	printf("\nSaved Client Key:\n");
-	for (size_t i = 0; i < klen; i++) {
-		printf("%02x ",client_key[i]);
-	}
-	printf("\n");
+	// printf("\nSaved Client Key:\n");
+	// for (size_t i = 0; i < klen; i++) {
+	// 	printf("%02x ",client_key[i]);
+	// }
+	// printf("\n");
 	
 	// End of generating key
 
@@ -413,12 +413,12 @@ static void msg_typed(char *line)
 			char* hmackey = "asdfasdfasdfasdfasdfasdf";
 			unsigned char mac[64]; /* if using sha512 */
 			memset(mac,0,64);
-			HMAC(EVP_sha512(),hmackey,strlen(hmackey),(unsigned char*)mymsg.c_str(),mymsg.length(),mac,0);
+			HMAC(EVP_sha512(),session_key,128,ct,512,mac,0);
 			//printf("hmac-512(\"%s\"):\n",mymsg);
-			//for (size_t i = 0; i < 64; i++) {
-			//	printf("%02x",mac[i]);
-			//}
-			//printf("\n");
+			// for (size_t i = 0; i < 64; i++) {
+			// 	printf("%02x",mac[i]);
+			// }
+			// printf("\n");
 			
 			unsigned char result[576];
 			memcpy(result,ct,512);
@@ -731,6 +731,10 @@ void* recvMsg(void*)
 		memcpy(mymsg,msg,512);
 		unsigned char mymac[64];
 		memcpy(mymac,msg+512,64);
+		// for (size_t i = 0; i < 64; i++) {
+		// 	printf("%02x",mymac[i]);
+		// }
+		// printf("\n");
 		unsigned char pt[512];
 		unsigned char iv[16];
 		for (size_t i = 0; i < 16; i++) iv[i] = i;
@@ -786,27 +790,37 @@ void* recvMsg(void*)
 
 			fclose(fptr);
 		}
+
+		char* hmackey = "asdfasdfasdfasdfasdfasdf";
+		unsigned char mac[64]; /* if using sha512 */
+		memset(mac,0,64);
+		HMAC(EVP_sha512(),session_key,128,(unsigned char*)mymsg,512,mac,0);
+
+		int result = 0;
+		result = memcmp(mac, mymac, 64);
 		
-		/* now decrypt.  NOTE: in counter mode, encryption and decryption are
-		 * actually identical, so doing the above again would work.  Also
-		 * note that it is crucial to make sure IVs are not reused, though it
-		 * Won't be an issue for our hybrid scheme as AES keys are only used
-		 * once.  */
-		/* wipe out plaintext to be sure it worked: */
-		memset(pt,0,512);
-		EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
-		if (1!=EVP_DecryptInit_ex(ctx,EVP_aes_256_ctr(),0,session_key,iv))
-			ERR_print_errors_fp(stderr);
-		if (1!=EVP_DecryptUpdate(ctx,pt,&nWritten,mymsg,512))
-			ERR_print_errors_fp(stderr);
-		// printf("decrypted %i bytes:\n%s\n",nWritten,pt);
-		/* NOTE: counter mode will preserve the length (although the person
-		 * decrypting needs to know the IV) */
-		
-		pthread_mutex_lock(&qmx);
-		mq.push_back({false,(char*)pt,"Mr Thread",msg_win});
-		pthread_cond_signal(&qcv);
-		pthread_mutex_unlock(&qmx);
+		if (result == 0) {
+			/* now decrypt.  NOTE: in counter mode, encryption and decryption are
+			* actually identical, so doing the above again would work.  Also
+			* note that it is crucial to make sure IVs are not reused, though it
+			* Won't be an issue for our hybrid scheme as AES keys are only used
+			* once.  */
+			/* wipe out plaintext to be sure it worked: */
+			memset(pt,0,512);
+			EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+			if (1!=EVP_DecryptInit_ex(ctx,EVP_aes_256_ctr(),0,session_key,iv))
+				ERR_print_errors_fp(stderr);
+			if (1!=EVP_DecryptUpdate(ctx,pt,&nWritten,mymsg,512))
+				ERR_print_errors_fp(stderr);
+			// printf("decrypted %i bytes:\n%s\n",nWritten,pt);
+			/* NOTE: counter mode will preserve the length (although the person
+			* decrypting needs to know the IV) */
+			
+			pthread_mutex_lock(&qmx);
+			mq.push_back({false,(char*)pt,"Mr Thread",msg_win});
+			pthread_cond_signal(&qcv);
+			pthread_mutex_unlock(&qmx);
+		}
 	}
 	return 0;
 }
