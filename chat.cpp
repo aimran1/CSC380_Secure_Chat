@@ -155,7 +155,11 @@ int initServerNet(int port)
 		printf("%02x ",server_key[i]);
 	}
 	printf("\n");
-	
+
+	FILE *fptr;
+	fptr = fopen("server_key.bin", "w");
+	fwrite(kC, sizeof(unsigned char), klen, fptr);
+	fclose(fptr);
 
 	return 0;
 }
@@ -243,6 +247,11 @@ static int initClientNet(char* hostname, int port)
 	printf("\n");
 	
 	// End of generating key
+
+	FILE *fptr;
+	fptr = fopen("client_key.bin", "w");
+	fwrite(kC, sizeof(unsigned char), klen, fptr);
+	fclose(fptr);
 
 	return 0;
 }
@@ -333,23 +342,73 @@ static void msg_typed(char *line)
 			memset(ct,0,512);
 			memset(pt,0,512);
 			
-			unsigned char* session_key = (client_key == NULL) ? server_key : client_key;
+			//unsigned char* session_key = (client_key == NULL) ? server_key : client_key;
+			FILE *fptr;
+			unsigned char* session_key;
+			if (client_key == NULL) {
+				fptr = fopen("server_key.bin", "rb");
+				if (fptr == NULL) {
+					printf("Failed to open file.\n");
+				}
+				fseek(fptr, 0L, SEEK_END);
+				long int file_size = ftell(fptr);
+				rewind(fptr);
+
+				session_key = (unsigned char*) malloc(sizeof(unsigned char) * file_size);
+				if (session_key == NULL) {
+					printf("FAILED TO READ\n");
+					fclose(fptr);
+				}
+
+				size_t bytes_read = fread(session_key, sizeof(unsigned char), file_size, fptr);
+				if (bytes_read != file_size) {
+					printf("failed to read\n");
+					free(session_key);
+					fclose(fptr);
+				}
+
+				fclose(fptr);
+			}
+			else {
+				fptr = fopen("client_key.bin", "rb");
+				if (fptr == NULL) {
+					printf("Failed to open file.\n");
+				}
+				fseek(fptr, 0L, SEEK_END);
+				long int file_size = ftell(fptr);
+				rewind(fptr);
+
+				session_key = (unsigned char*) malloc(sizeof(unsigned char) * file_size);
+				if (session_key == NULL) {
+					printf("FAILED TO READ\n");
+					fclose(fptr);
+				}
+
+				size_t bytes_read = fread(session_key, sizeof(unsigned char), file_size, fptr);
+				if (bytes_read != file_size) {
+					printf("failed to read\n");
+					free(session_key);
+					fclose(fptr);
+				}
+
+				fclose(fptr);
+			}
 
 			/* encrypt: */
 			EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
 			if (1!=EVP_EncryptInit_ex(ctx,EVP_aes_256_ctr(),0,session_key,iv))
 				ERR_print_errors_fp(stderr);
 			int nWritten; /* stores number of written bytes (size of ciphertext) */
-			if (1!=EVP_EncryptUpdate(ctx,ct,&nWritten,(unsigned char*)mymsg.c_str(),len))
+			if (1!=EVP_EncryptUpdate(ctx,ct,&nWritten,(unsigned char*)mymsg.c_str(),512))
 				ERR_print_errors_fp(stderr);
 			EVP_CIPHER_CTX_free(ctx);
 			size_t ctlen = nWritten;
 			message_length = nWritten;
-			printf("ciphertext of length %i:\n",nWritten);
-			for (size_t i = 0; i < ctlen; i++) {
-				printf("%02x",ct[i]);
-			}
-			printf("\n");
+			// printf("ciphertext of length %i:\n",nWritten);
+			// for (size_t i = 0; i < ctlen; i++) {
+			// 	printf("%02x",ct[i]);
+			// }
+			// printf("\n");
 				
 			char* hmackey = "asdfasdfasdfasdfasdfasdf";
 			unsigned char mac[64]; /* if using sha512 */
@@ -677,7 +736,56 @@ void* recvMsg(void*)
 		for (size_t i = 0; i < 16; i++) iv[i] = i;
 		int nWritten = message_length;
 		
-		unsigned char* session_key = (client_key == NULL) ? server_key : client_key;
+		//unsigned char* session_key = (client_key == NULL) ? server_key : client_key;
+		FILE *fptr;
+		unsigned char* session_key;
+		if (client_key == NULL) {
+			fptr = fopen("server_key.bin", "rb");
+		if (fptr == NULL) {
+			printf("Failed to open file.\n");
+		}
+		fseek(fptr, 0L, SEEK_END);
+		long int file_size = ftell(fptr);
+		rewind(fptr);
+
+		session_key = (unsigned char*) malloc(sizeof(unsigned char) * file_size);
+		if (session_key == NULL) {
+			printf("FAILED TO READ\n");
+			fclose(fptr);				}
+
+			size_t bytes_read = fread(session_key, sizeof(unsigned char), file_size, fptr);
+			if (bytes_read != file_size) {
+				printf("failed to read\n");
+				free(session_key);
+				fclose(fptr);
+			}
+
+			fclose(fptr);
+		}
+		else {
+			fptr = fopen("client_key.bin", "rb");
+			if (fptr == NULL) {
+				printf("Failed to open file.\n");
+			}
+			fseek(fptr, 0L, SEEK_END);
+			long int file_size = ftell(fptr);
+			rewind(fptr);
+
+			session_key = (unsigned char*) malloc(sizeof(unsigned char) * file_size);
+			if (session_key == NULL) {
+				printf("FAILED TO READ\n");
+				fclose(fptr);
+			}
+
+			size_t bytes_read = fread(session_key, sizeof(unsigned char), file_size, fptr);
+			if (bytes_read != file_size) {
+				printf("failed to read\n");
+				free(session_key);
+				fclose(fptr);
+			}
+
+			fclose(fptr);
+		}
 		
 		/* now decrypt.  NOTE: in counter mode, encryption and decryption are
 		 * actually identical, so doing the above again would work.  Also
@@ -691,7 +799,7 @@ void* recvMsg(void*)
 			ERR_print_errors_fp(stderr);
 		if (1!=EVP_DecryptUpdate(ctx,pt,&nWritten,mymsg,512))
 			ERR_print_errors_fp(stderr);
-		printf("decrypted %i bytes:\n%s\n",nWritten,pt);
+		// printf("decrypted %i bytes:\n%s\n",nWritten,pt);
 		/* NOTE: counter mode will preserve the length (although the person
 		 * decrypting needs to know the IV) */
 		
