@@ -37,6 +37,18 @@ int dhGen(mpz_t sk, mpz_t pk);
  * apply a KDF to obtain buflen bytes of key, stored in keybuf */
 int dhFinal(mpz_t sk_mine, mpz_t pk_mine, mpz_t pk_yours, unsigned char* keybuf, size_t buflen);
 /* NOTE: pk_mine is included just to avoid recomputing it from sk_mine */
+/** 3DH (as seen in Signal).  Parameters:
+ * a      -- long term secret key
+ * A      -- long term public key
+ * x      -- ephemeral secret key
+ * X      -- ephemeral public key
+ * B      -- long term public key of your friend
+ * Y      -- ephemeral public key of your friend
+ * keybuf -- buflen bytes of key material will be written here
+ * buflen -- length of keybuf
+ * */
+int dh3Final(mpz_t a, mpz_t A, mpz_t x, mpz_t X, mpz_t B, mpz_t Y,
+		unsigned char* keybuf, size_t buflen);
 #ifdef __cplusplus
 }
 #endif

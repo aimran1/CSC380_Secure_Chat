@@ -158,7 +158,6 @@ int dhFinal(mpz_t sk_mine, mpz_t pk_mine, mpz_t pk_yours, unsigned char* keybuf,
 	NEWZ(x);
 	mpz_powm(x,pk_yours,sk_mine,p);
 	/* now apply key derivation to get the desired number of bytes: */
-	/* we use the diffie hellman value as the key, and the  */
 	unsigned char* SK = malloc(pLen);
 	memset(SK,0,pLen);
 	size_t nWritten; /* saves number of bytes written by Z2BYTES */
@@ -218,6 +217,93 @@ int dhFinal(mpz_t sk_mine, mpz_t pk_mine, mpz_t pk_yours, unsigned char* keybuf,
 	memset(CTX,0,ctxlen);
 	memset(K,0,maclen);
 	memset(SK,0,pLen);
+	memset(PRK,0,maclen);
+	return 0;
+}
+
+int dh3Final(mpz_t a, mpz_t A, mpz_t x, mpz_t X, mpz_t B, mpz_t Y,
+		unsigned char* keybuf, size_t buflen)
+{
+	/* the 3 DH values will be stored in
+	 * AY == Y^a
+	 * XY == Y^x
+	 * XB == B^x
+	 * NOTE: so that both parties derive the same key, we'll swap(AY,XB)
+	 * if necessary, based on whether or not A < B. */
+	NEWZ(AY);
+	mpz_powm(AY,Y,a,p);
+	NEWZ(XY);
+	mpz_powm(XY,Y,x,p);
+	NEWZ(XB);
+	mpz_powm(XB,B,x,p);
+	if (mpz_cmp(A,B) > 0) {
+		mpz_swap(AY,XB);
+	}
+	/* now apply key derivation to get the desired number of bytes: */
+	size_t kmlen = 3*pLen; /* length of raw key material (AY || XY || XB) */
+	unsigned char* KM = malloc(kmlen);
+	memset(KM,0,kmlen);
+	/* NOTE: we discard number of bytes actually written by Z2BYTES and always
+	 * use kmlen, so it is important that we 0 the buffer first. */
+	size_t nw; /* saves number of bytes written by Z2BYTES (ignored) */
+	Z2BYTES(KM,nw,AY);
+	Z2BYTES(KM+pLen,nw,XY);
+	Z2BYTES(KM+2*pLen,nw,XB);
+	const size_t maclen = 64; /* output len of sha512 */
+	unsigned char PRK[maclen];
+	memset(PRK,0,maclen);
+	HMAC(EVP_sha512(),hmacsalt,strlen(hmacsalt),KM,kmlen,PRK,0);
+	/* Henceforth, use PRK as the HMAC key.  The initial chunk of derived key
+	 * is computed as HMAC_{PRK}(CTX || 0), where CTX = X || Y, the concatenation
+	 * of the ephemeral public keys, sorted ascending.
+	 * To generate further chunks K(i+1), proceed as follows:
+	 * K(i+1) = HMAC_{PRK}(K(i) || CTX || i). */
+	/* For convenience (?) we'll use a buffer named CTX that will contain
+	 * the previous key as well as the index i:
+	 *         +------------------+
+	 *  CTX == | K(i) | X | Y | i |
+	 *         +------------------+
+	 * */
+	const size_t ctxlen = maclen + 2*pLen + 8;
+	/* NOTE: the extra 8 bytes are to concatenate the key chunk index */
+	unsigned char* CTX = malloc(ctxlen);
+	uint64_t index = 0;       /* key index */
+	uint64_t indexBE = index; /* key index, but always big endian */
+	memset(CTX,0,ctxlen);
+	/* NOTE: shouldn't swap X,Y since mpz_t params are effectively by-reference */
+	if (mpz_cmp(X,Y) < 0) {
+		Z2BYTES(CTX+maclen,nw,X);
+		Z2BYTES(CTX+maclen+pLen,nw,Y);
+	} else {
+		Z2BYTES(CTX+maclen,nw,Y);
+		Z2BYTES(CTX+maclen+pLen,nw,X);
+	}
+	memcpy(CTX+maclen+2*pLen,&indexBE,sizeof(indexBE));
+	unsigned char K[maclen];
+	memset(K,0,maclen);
+	/* compute initial key chunk: */
+	HMAC(EVP_sha512(),PRK,maclen,CTX,ctxlen,K,0);
+	/* and write to the output key buffer: */
+	size_t copylen = (buflen < maclen)?buflen:maclen;
+	memcpy(keybuf,K,copylen);
+	size_t bytesLeft = buflen - copylen;
+	while (bytesLeft) {
+		/* compute next chunk and copy */
+		index++;
+		indexBE = htobe64(index);
+		memcpy(CTX+maclen+2*pLen,&indexBE,sizeof(indexBE));
+		memcpy(CTX,K,maclen);
+		HMAC(EVP_sha512(),PRK,maclen,CTX,ctxlen,K,0);
+		copylen = (bytesLeft < maclen)?bytesLeft:maclen;
+		/* move to next chunk of key buffer */
+		keybuf += maclen;
+		memcpy(keybuf,K,copylen);
+		bytesLeft -= copylen;
+	}
+	/* erase sensitive data: */
+	memset(CTX,0,ctxlen);
+	memset(K,0,maclen);
+	memset(KM,0,pLen);
 	memset(PRK,0,maclen);
 	return 0;
 }
